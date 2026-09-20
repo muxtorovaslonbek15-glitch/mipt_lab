@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIPT fizika laboratoriya ishlari</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1b2333;--mut:#6b7488;--ac:#2563eb;--bd:#e4e7ef}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1420;--card:#171d2b;--tx:#e8ecf5;--mut:#9aa4b8;--ac:#6ea0ff;--bd:#283148}}
+*{box-sizing:border-box;margin:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--tx);padding:16px}
+.w{max-width:960px;margin:0 auto}
+h1{font-size:24px;margin:8px 0 4px}
+.sub{color:var(--mut);font-size:14px;margin-bottom:14px}
+.bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+input[type=search]{flex:1;min-width:220px;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;font:inherit;background:var(--card);color:var(--tx)}
+label{font-size:14px;color:var(--mut);display:flex;gap:6px;align-items:center}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+.c h3{font-size:16px;margin-bottom:6px;display:flex;justify-content:space-between;gap:8px}
+.c h3 a{font-size:12px;font-weight:400;color:var(--mut)}
+.c ul{list-style:none;padding:0;display:grid;gap:4px}
+a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+.no{color:var(--mut);font-size:13px}
+#msg{padding:24px;text-align:center;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="w">
+ <h1>MIPT fizika laboratoriya ishlari</h1>
+ <p class="sub" id="sum">Yuklanmoqda...</p>
+ <div class="bar">
+  <input type="search" id="q" placeholder="Lab raqami yoki muallif bo'yicha qidiring (masalan: 3.4.1 yoki Belokopytov)">
+  <label><input type="checkbox" id="only"> Faqat PDF borlari</label>
+ </div>
+ <div id="msg"></div>
+ <div class="g" id="grid"></div>
+</div>
+<script>
+var OWNER="muxtorovaslonbek15-glitch",REPO="mipt_lab",BRANCH="master";
+var GH="https://github.com/"+OWNER+"/"+REPO;
+var labs=[];
+
+// Daraxt ro'yxatidan laboratoriyalar va PDF'larni ajratib olish
+function parse(tree){
+  var map={},i,e,m,name;
+  for(i=0;i<tree.length;i++){
+    e=tree[i];
+    if(e.type==="tree"&&e.path.indexOf("/")<0&&/^\d/.test(e.path)&&!map[e.path])map[e.path]=[];
+  }
+  for(i=0;i<tree.length;i++){
+    e=tree[i];
+    m=e.type==="blob"&&/^([^\/]+)\/pdf\/(.+\.pdf)$/i.exec(e.path);
+    if(m&&map[m[1]]){
+      name=m[2].replace(/\.pdf$/i,"").replace(/_/g," ");
+      map[m[1]].push({name:name,path:e.path});
+    }
+  }
+  return Object.keys(map).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true})}).map(function(k){
+    map[k].sort(function(a,b){return a.name.localeCompare(b.name)});
+    return{lab:k,pdfs:map[k]};
+  });
+}
+function enc(p){return p.split("/").map(encodeURIComponent).join("/")}
+function el(t,c,x){var n=document.createElement(t);if(c)n.className=c;if(x!=null)n.textContent=x;return n}
+
+function draw(){
+  var q=document.getElementById("q").value.trim().toLowerCase(),only=document.getElementById("only").checked;
+  var grid=document.getElementById("grid");grid.textContent="";
+  var shown=0;
+  labs.forEach(function(L){
+    if(only&&!L.pdfs.length)return;
+    if(q&&L.lab.toLowerCase().indexOf(q)<0&&!L.pdfs.some(function(p){return p.name.toLowerCase().indexOf(q)>-1}))return;
+    shown++;
+    var c=el("div","c"),h=el("h3");
+    h.appendChild(el("span",null,"Lab "+L.lab));
+    var f=el("a",null,"GitHub papkasi");f.href=GH+"/tree/"+BRANCH+"/"+enc(L.lab);f.target="_blank";f.rel="noopener";h.appendChild(f);
+    c.appendChild(h);
+    if(L.pdfs.length){
+      var ul=el("ul");
+      L.pdfs.forEach(function(p){
+        var li=el("li"),a=el("a",null,p.name);a.href="./"+enc(p.path);a.target="_blank";a.rel="noopener";li.appendChild(a);ul.appendChild(li);
+      });
+      c.appendChild(ul);
+    }else c.appendChild(el("p","no","PDF topilmadi"));
+    grid.appendChild(c);
+  });
+  document.getElementById("msg").textContent=shown?"":"Hech narsa topilmadi.";
+}
+
+function start(){
+  var url="https://api.github.com/repos/"+OWNER+"/"+REPO+"/git/trees/"+BRANCH+"?recursive=1";
+  fetch(url).then(function(r){if(!r.ok)throw new Error(r.status);return r.json()}).then(function(d){
+    labs=parse(d.tree||[]);
+    var withPdf=labs.filter(function(L){return L.pdfs.length}).length;
+    var total=labs.reduce(function(s,L){return s+L.pdfs.length},0);
+    document.getElementById("sum").textContent=labs.length+" ta laboratoriya, "+total+" ta PDF hisobot ("+(labs.length-withPdf)+" tasida PDF yo'q)."+(d.truncated?" Ro'yxat to'liq emas.":"");
+    draw();
+  }).catch(function(){
+    document.getElementById("sum").textContent="";
+    var m=document.getElementById("msg");m.textContent="Ro'yxatni yuklab bo'lmadi (GitHub limiti bo'lishi mumkin). Birozdan keyin qayta urinib ko'ring yoki ";
+    var a=el("a",null,"GitHub'da oching");a.href=GH;m.appendChild(a);m.appendChild(document.createTextNode("."));
+  });
+}
+document.getElementById("q").oninput=draw;
+document.getElementById("only").onchange=draw;
+start();
+</script>
+</body>
+</html>
